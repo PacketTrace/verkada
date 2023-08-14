@@ -4,12 +4,15 @@ import asyncio
 import ntplib
 from datetime import datetime
 from termcolor import colored
+import socket
 import netifaces
 import aiohttp
+import asyncio
 import socket
 import speedtest
 from tqdm import tqdm
 import sys
+import subprocess
 
 def printing(text):
     print(text)
@@ -33,6 +36,8 @@ class colors:
     BOLD = '\033[1m'
     UNDERLINE = '\033[4m'
 
+
+
 print("--------------------------------------------------")
 print("Welcome to the Verkada Networking Test Tool")
 print("--------------------------------------------------")
@@ -51,7 +56,7 @@ print("\nFor questions or feedback, please contact Casey Keller.\n")
 time.sleep(1)
 #Convert text response to a list of domains
 try:
-    pasteBin = requests.get('https://pastebin.com')
+    pasteBin = requests.get('https://pastebin.com/raw/1aSY0jLj')
     if pasteBin.status_code == 200:
         allUrls = requests.get(camerasUrl).text.split('\r\n')
         acUrl = requests.get(acUrl).text.split('\r\n')
@@ -71,8 +76,10 @@ try:
                 values = ','.join(map(str, list_values))
                 file.write(f"{list_name}={values}\n")
 
-        print(f"Successfuly reached pastebin and grabbed dynamic URLs. Saving URLs to local computer for offline mode...\n{filename}")
+        print(f"Successfuly reached pastebin and grabbed dynamic URLs. Saving URLs to local computer for offline mode...\nLocal file name: {filename}")
+        print('')
     else:
+        print(pasteBin.status_code)
         filename = 'verkadaDomains.txt'
         locals_dict = {}
 
@@ -146,7 +153,27 @@ async def test_port(endpoint, port, timeout):
     except Exception as e:
         return False
 
+def get_first_name():
+    try:
+        # Get the current username using 'whoami'
+        username = subprocess.check_output(['whoami']).decode().strip()
 
+        # Get the real (full) name associated with the username using 'dscl'
+        full_name = subprocess.check_output(['dscl', '.', '-read', f"/Users/{username}", 'RealName']).decode().strip()
+        
+        # The RealName field has a title and possibly multiple lines (for first, middle, last names).
+        # Split the output by lines and take the second line, which should be the first name.
+        first_name = full_name.split('\n')[1].strip()
+        first_name = full_name.split(' ')[1].strip()
+        return first_name
+    except Exception as e:
+        try: 
+            first_name = full_name.split('\n')[1].strip()
+            return first_name
+        
+        except:
+            print(f"Error retrieving user's first name: {e}")
+            return None
     
 def run_upload_speedtest():
     st = speedtest.Speedtest()

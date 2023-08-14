@@ -4,15 +4,17 @@ import asyncio
 import ntplib
 from datetime import datetime
 from termcolor import colored
-import socket
 import netifaces
 import aiohttp
-import asyncio
 import socket
 import speedtest
 from tqdm import tqdm
+import sys
 
-
+def printing(text):
+    print(text)
+    if outputFile:
+        outputFile.write(str(text))
  
 acUrl = 'https://pastebin.com/raw/RtHkkwmW'
 alarmsUrl = 'https://pastebin.com/raw/AJJqZ2LV'
@@ -38,29 +40,98 @@ print("\nCapabilities:")
 print("  - TCP endpoints")
 print("  - NTP reachability")
 print("  - Download/Uplaod test")
-print("\nNote: UDP testing is not currently supported.")
+print("\nNote: UDP testing is not currently supported. The script calls files located on pastebin.com. If pastebin is unreachable, an attempt will be made to use a local file.")
 print("\nFor questions or feedback, please contact Casey Keller.\n")
+
+
+
 
 
 
 time.sleep(1)
 #Convert text response to a list of domains
 try:
-    print('Gathering FQDN endpoints...')
-    allUrls = requests.get(camerasUrl).text.split('\r\n')
-    acUrl = requests.get(acUrl).text.split('\r\n')
-    allUrls = allUrls + acUrl
-    verkada_endpoints = allUrls + requests.get(alarmsUrl).text.split('\r\n')
-    sipEndpoints =requests.get(intercomUrl).text.split('\r\n')
-    ntpEndpoints =requests.get(ntpUrl).text.split('\r\n')
-    
+    pasteBin = requests.get('https://pastebin.com')
+    if pasteBin.status_code == 200:
+        allUrls = requests.get(camerasUrl).text.split('\r\n')
+        acUrl = requests.get(acUrl).text.split('\r\n')
+        allUrls = allUrls + acUrl
+        verkadaEndpoints = allUrls + requests.get(alarmsUrl).text.split('\r\n')
+        sipEndpoints =requests.get(intercomUrl).text.split('\r\n')
+        ntpEndpoints =requests.get(ntpUrl).text.split('\r\n')
+        lists_dict = {
+        'verkadaEndpoints': verkadaEndpoints,
+        'sipEndpoints': sipEndpoints,
+        'ntpEndpoints': ntpEndpoints
+}
+
+        filename = 'verkadaDomains.txt'
+        with open(filename, 'w') as file:
+            for list_name, list_values in lists_dict.items():
+                values = ','.join(map(str, list_values))
+                file.write(f"{list_name}={values}\n")
+
+        print(f"Successfuly reached pastebin and grabbed dynamic URLs. Saving URLs to local computer for offline mode...\n{filename}")
+    else:
+        filename = 'verkadaDomains.txt'
+        locals_dict = {}
+
+        try:
+            with open(filename, 'r') as file:
+                for line in file:
+                    list_name, values = line.strip().split('=')
+                    items = values.split(',')
+                    # Using eval to determine if it's a number or string
+                    items = [eval(item) if item.replace('.', '', 1).isdigit() else item for item in items]
+                    locals_dict[list_name] = items
+
+            print("Unable to reach pastebin. Using local mode...:")
+            for name, list_ in locals_dict.items():
+                exec(f"{name} = list_")  # This will set the variable name to the loaded list
+                #print(f"{name}:", list_)
+                if f"{name}:" == 'verkadaEndpoints':
+                    verkadaEndpoints = list_
+                if f"{name}:" == 'sipEndpoints':
+                    sipEndpoints = list_
+                if f"{name}:" == 'ntpEndpoints':
+                    ntpEndpoints = list_
+
+
+        except FileNotFoundError:
+            print(f"{filename} not found.")
 except:
     print('Please verify you have a valid IP4 address and can reach the internet.')
-    exit()
+    filename = 'verkadaDomains.txt'
+    locals_dict = {}
+
+    try:
+        with open(filename, 'r') as file:
+            for line in file:
+                list_name, values = line.strip().split('=')
+                items = values.split(',')
+                # Using eval to determine if it's a number or string
+                items = [eval(item) if item.replace('.', '', 1).isdigit() else item for item in items]
+                locals_dict[list_name] = items
+
+        print("Loaded lists from the file:")
+        for name, list_ in locals_dict.items():
+            exec(f"{name} = list_")  # This will set the variable name to the loaded list
+            print(f"{name}:", list_)
+            if f"{name}:" == 'verkadaEndpoints':
+                verkadaEndpoints = list_
+            if f"{name}:" == 'sipEndpoints':
+                sipEndpoints = list_
+            if f"{name}:" == 'ntpEndpoints':
+                ntpEndpoints = list_
+
+
+    except FileNotFoundError:
+        print(f"{filename} not found.")
+        exit()
 
 
 
-ntp_server = "verkada.com"  # Replace with the NTP server you want to test
+  # Replace with the NTP server you want to test
 timeout = 3  # Timeout in seconds
 sslPorts = [443]
 sipPorts = [5060, 5061]
@@ -75,33 +146,14 @@ async def test_port(endpoint, port, timeout):
     except Exception as e:
         return False
 
-def speedtest_with_progress():
+
+    
+def run_upload_speedtest():
     st = speedtest.Speedtest()
 
-    # Progress bar for download
-    print("Testing Download Speed...")
-    for _ in tqdm(range(10), desc="Download", ncols=100):
-        if _ == 0:
-            st.download()
-        time.sleep(0.1)  # tqdm is very fast, so we introduce a slight delay for a better visual effect
-
-    # Progress bar for upload
-    print("\nTesting Upload Speed...")
-    for _ in tqdm(range(10), desc="Upload", ncols=100):
-        if _ == 0:
-            st.upload()
-        time.sleep(0.1)
-
-    # Getting ping value
-    print("\nGetting Best Server based on Ping...")
-    st.get_best_server()
-    ping_val = st.results.ping
-
-    # Printing results
-    print("\nResults:")
-    print(f"Download Speed: {st.results.download / 1_000_000:.2f} Mbps")
-    print(f"Upload Speed: {st.results.upload / 1_000_000:.2f} Mbps")
-    print(f"Ping: {ping_val} ms")
+    print("Running upload speed test...")
+    upload_speed = st.upload() / 1_000_000  # Convert to Mbps
+    print(f"Upload Speed: {upload_speed:.2f} Mbps")
 
 async def test_endpoints(endpoints, ports, timeout):
     results = []
@@ -157,7 +209,7 @@ def get_dns_servers():
         dns_servers = [line.split()[1] for line in lines if line.startswith("nameserver")]
     return dns_servers
 async def main():
-    sslResults = await test_endpoints(verkada_endpoints, sslPorts, timeout=3)
+    sslResults = await test_endpoints(verkadaEndpoints, sslPorts, timeout=3)
     sipResults = await test_endpoints(sipEndpoints, sipPorts, timeout=3)
     for endpoint, port, result in sslResults:
         port_status = "open" if result else "closed"
@@ -179,10 +231,9 @@ async def main():
             ntp_datetime = datetime.fromtimestamp(ntp_time)
             print(colored(f"NTP server {server} time: {ntp_datetime}", "green"))
         else:
-            print(colored(f"Unable to query NTP server {server}", "red"))
+            print(colored(f"Unable to query NTP server {server}. Is outbound port 123 open?", "red"))
     print('')
-    print('Running a speed test. This will take a bit...')
-    speedtest_with_progress()
+    run_upload_speedtest()
     iface = netifaces.gateways()['default'][netifaces.AF_INET][1]
     dhcp_info = get_dhcp_info(iface)
     print('')
